@@ -294,6 +294,78 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 	return button
 end
 
+--CheckBox constructor
+function NewCheckBox(target, x, y, width, height, text, func, color_bg, color_text, color_used)
+	local chbox = {
+		check = false, 
+		
+		draw = function(s, color)
+			if not s.visible then return end
+			if not color then color = s.color_bg end
+			local cursorX, cursorY = s.target.getCursorPos()
+			
+			local px = 1
+			local py = 1
+			if s._PARENT then
+				px, py = s._PARENT.x, s._PARENT.y
+			end
+			for i = 1, s.height do
+				drawLine(s.target, px + s.x - 1, py + s.y + i - 2, px + s.x + s.width - 2, py + s.y + i - 2 , color)
+			end
+			
+			local cx, cy = getTextLayoutPos(s.text_pos, "[ ]-" .. s.text, s.x, s.y, s.width, s.height, px, py)
+			s.target.setTextColor(s.color_text)
+			s.target.setCursorPos(cx, cy)
+			s.target.write("["..( (s.check == true) and "X" or " ") .. "]-"..s.text)	
+				
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+		
+		clickCheck = function(s, t)
+			if not s.enabled then return end
+			
+			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
+				or s.target ~= term.native and t[1] == "mouse_click" then
+				return 
+			end
+
+			local px, py = 1, 1
+			if s._PARENT then
+				px = s._PARENT.x
+				py = s._PARENT.y
+			end
+			
+			if inBounds(t[3], t[4], s.x + px - 2, s.y + py - 2, s.x + px + s.width - 1, s.y + py + s.height - 2) then
+				s:used()
+				return true
+			end
+			return false
+		end,
+		
+		used = function(s)
+			s.check = not s.check
+			s:draw(s.color_used)
+			sleep(0.01)
+			if s.func then s:func() end
+			s:draw()
+		end,
+	}
+	chbox = setmetatable(chbox, getDefaults())
+	
+	chbox.target = target
+	chbox.x = x
+	chbox.y = y
+	chbox.width = width
+	chbox.height = height
+	chbox.text = text
+	chbox.func = func
+	chbox.color_text = color_text
+	chbox.color_bg = color_bg
+	chbox.color_used = color_used
+	
+	return chbox
+end
+
 --Progress Bar constructor
 function NewProgressBar(target, x, y, width, height, color_bg, color_used)
 	local pbar = {
@@ -469,7 +541,9 @@ local function exec(event, object)
 	if not object.enabled then return end
 	for _, child in pairs(object._CHILDREN) do
 		exec(event, child)
-		child:clickCheck(event)
+		if child:clickCheck(event) then
+			return true
+		end
 	end
 end
 
@@ -478,6 +552,8 @@ MainPanel = NewPanel()
 --Event handler. Call this if overwrite os.pullEvent()
 function eventHandler(e)
 	if e[1] == "mouse_click" or e[1] == "monitor_touch" then
+		--Check if selected object or its children clicked
+		exec(e. SELECTED_OBJECT)
 		SELECTED_OBJECT = nil
 		exec(e, MainPanel)
 	elseif e[1] == "key" or e[1] == "mouse_drag" then
