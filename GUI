@@ -128,6 +128,7 @@ local function inBounds(x, y, x1, y1, w, h)
 	return false
 end
 
+--Defaults for all obkects
 local function getDefaults()
 	local mt = {
 		target = term.native,
@@ -197,6 +198,7 @@ local function getDefaults()
 	return {__index = mt}
 end
 
+--Panel constructor
 function NewPanel(x, y, visible, enabled)
 	local panel = {
 		addCHILD = function(s, array)
@@ -223,6 +225,7 @@ function NewPanel(x, y, visible, enabled)
 	return panel
 end
 
+--Button constructor
 function NewButton(target, x, y, width, height, text, func, color_bg, color_text, color_used)
 	local button = {
 		draw = function(s, color)
@@ -291,6 +294,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 	return button
 end
 
+--Progress Bar constructor
 function NewProgressBar(target, x, y, width, height, color_bg, color_used)
 	local pbar = {
 		step = 0.01,
@@ -356,6 +360,7 @@ function NewProgressBar(target, x, y, width, height, color_bg, color_used)
 	return pbar
 end
 
+--TextArea constructor
 function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 	local textarea = {
 		draw = function(s)
@@ -428,6 +433,7 @@ function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 	return textarea
 end
 
+--Label constructor
 function NewLabel(target, x, y, text, color_bg, color_text)
 	local label = {
 		draw = function(s)
@@ -458,7 +464,7 @@ function NewLabel(target, x, y, text, color_bg, color_text)
 	return label
 end
 
-
+--click/touch handler
 local function exec(event, object)
 	if not object.enabled then return end
 	for _, child in pairs(object._CHILDREN) do
@@ -469,6 +475,7 @@ end
 
 MainPanel = NewPanel()
 
+--Event handler. Call this if overwrite os.pullEvent()
 function eventHandler(e)
 	if e[1] == "mouse_click" or e[1] == "monitor_touch" then
 		SELECTED_OBJECT = nil
