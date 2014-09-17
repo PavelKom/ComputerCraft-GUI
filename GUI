@@ -1,0 +1,503 @@
+-------------------------------------------------------------------------------------------
+---Custon drawing API
+-------------------------------------------------------------------------------------------
+local function drawPixelInternal( target, xPos, yPos )
+	target.setCursorPos(xPos, yPos)
+	target.write(" ")
+end
+
+local function drawPixel(target, xPos, yPos, nColour )
+	if nColour then
+		target.setBackgroundColor( nColour )
+	end
+	drawPixelInternal( target, xPos, yPos )
+end
+
+local function drawLine(target, startX, startY, endX, endY, nColour )
+	if nColour then
+		target.setBackgroundColor( nColour )
+	end
+	
+	startX = math.floor(startX)
+	startY = math.floor(startY)
+	endX = math.floor(endX)
+	endY = math.floor(endY)
+	
+	if startX == endX and startY == endY then
+		drawPixelInternal( target, startX, startY )
+		return
+	end
+	
+	local minX = math.min( startX, endX )
+	if minX == startX then
+		minY = startY
+		maxX = endX
+		maxY = endY
+	else
+		minY = endY
+		maxX = startX
+		maxY = startY
+	end
+		
+	local xDiff = maxX - minX
+	local yDiff = maxY - minY
+			
+	if xDiff > math.abs(yDiff) then
+		local y = minY
+		local dy = yDiff / xDiff
+		for x=minX,maxX do
+			drawPixelInternal( target, x, math.floor( y + 0.5 ) )
+			y = y + dy
+		end
+	else
+		local x = minX
+		local dx = xDiff / yDiff
+		if maxY >= minY then
+			for y=minY,maxY do
+				drawPixelInternal( target, math.floor( x + 0.5 ), y )
+				x = x + dx
+			end
+		else
+			for y=minY,maxY,-1 do
+				drawPixelInternal( target, math.floor( x + 0.5 ), y )
+				x = x - dx
+			end
+		end
+	end
+end
+-------------------------------------------------------------------------------------------
+---End of custom drawing API
+-------------------------------------------------------------------------------------------
+local peripheralPool = {}
+local SELECTED_OBJECT = nil
+
+local function getPeripheralName(p)
+	return peripheralPool[p]
+end
+
+function connectPeripheral(name)
+	local p = peripheral.wrap(name)
+	peripheralPool[p] = name
+	return p
+end
+
+local function getTextLayoutPos(layout, text, x, y, width, height, px, py)
+	if layout == "topleft" then
+		local cx = x + px - 1
+		local cy = y + py - 1
+		return cx, cy
+	elseif layout == "top" then
+		local cx = px + x + math.floor( ( width - string.len(text) ) / 2) - 1
+		local cy = y + py - 1
+		return cx, cy
+	elseif layout == "topright" then
+		local cx = px + x +( width - string.len(text) )
+		local cy = y + py - 1
+		return cx, cy
+	elseif layout == "center" then
+		local cy = py + y + math.floor(height / 2) - 1
+		local cx = px + x + math.floor( ( width - string.len(text) ) / 2) - 1
+		return cx, cy	
+	elseif layout == "left" then
+		local cx = x + px - 1
+		local cy = py + y + math.floor(height / 2) - 1
+		return cx, cy	
+	elseif layout == "right" then
+		local cx = px + x +( width - string.len(text) )
+		local cy = py + y + math.floor(height / 2) - 1
+		return cx, cy
+	elseif layout == "bottomleft" then
+		local cx = x + px - 1
+		local cy = py + y + math.floor(height / 2)
+		return cx, cy
+	elseif layout == "bottom" then
+		local cx = px + x + math.floor( ( width - string.len(text) ) / 2) - 1
+		local cy = py + y + math.floor(height / 2)
+		return cx, cy
+	elseif layout == "bottomright" then
+		local cx = px + x +( width - string.len(text) )
+		local cy = py + y + math.floor(height / 2)
+		return cx, cy
+	end
+end
+
+local function inBounds(x, y, x1, y1, w, h)
+	if ( ( x >= x1 and x <= ( x1 + w) ) and (y >= y1 and y <= ( y1 + h ) ) ) then
+		return true
+	end
+	return false
+end
+
+local function getDefaults()
+	local mt = {
+		target = term.native,
+		x = 1,
+		y = 1,
+		width = 0,
+		height = 0,
+		enabled = true,
+		visible = true,
+		text = "",
+		func = nil,
+		text_pos = "center",
+		color_text = colors.white,
+		color_bg = colors.blue,
+		color_used = colors.red,
+		_PARENT = nil,
+		_CHILDREN = {},
+		
+		addPARENT = function(s, object)
+			s._PARENT = object
+		end,
+		
+		--addCHILD = function(s, ...)
+		--	for _, object in pairs(...) do
+			--	table.insert(s._CHILDREN, object)
+			--	object:addPARENT(s)
+			--end
+		--end,
+		
+		addCHILD = function(s, object) end,
+		
+		enable = function(s)
+			s.enabled = true
+		end,
+		
+		disable = function(s)
+			s.enabled = false
+		end,
+		
+		show = function(s)
+			s.visible = true
+		end,
+		
+		hide = function(s)
+			s.visible = false
+		end,
+		
+		move = function(s, x, y)
+			s.x = x
+			s.y = y
+		end,
+		
+		resize = function(s, w, h)
+			s.width = w
+			s.height = h
+		end,
+		
+		clickCheck = function(s) end,
+		draw = function(s) end,
+		eventReact = function(s, e) end,
+		
+		used = function(s)
+			if s.func then s:func() end
+		end
+		
+	}
+	return {__index = mt}
+end
+
+function NewPanel(x, y, visible, enabled)
+	local panel = {
+		addCHILD = function(s, array)
+			for _, object in pairs(array) do
+				table.insert(s._CHILDREN, object)
+				object:addPARENT(s)
+			end
+		end,
+		
+		draw = function(s)
+			if not s.visible then return end
+			for _, child in pairs(s._CHILDREN) do
+				child:draw()
+			end
+		end
+	}
+	panel = setmetatable(panel, getDefaults())
+	
+	panel.x = x
+	panel.y = y
+	panel.visible = visible
+	panel.enabled = enabled
+	
+	return panel
+end
+
+function NewButton(target, x, y, width, height, text, func, color_bg, color_text, color_used)
+	local button = {
+		draw = function(s, color)
+			if not s.visible then return end
+			if not color then color = s.color_bg end
+			local cursorX, cursorY = s.target.getCursorPos()
+			
+			local px = 1
+			local py = 1
+			if s._PARENT then
+				px, py = s._PARENT.x, s._PARENT.y
+			end
+			for i = 1, s.height do
+				drawLine(s.target, px + s.x - 1, py + s.y + i - 2, px + s.x + s.width - 2, py + s.y + i - 2 , color)
+			end
+			
+			local cx, cy = getTextLayoutPos(s.text_pos, s.text, s.x, s.y, s.width, s.height, px, py)
+			s.target.setTextColor(s.color_text)
+			s.target.setCursorPos(cx, cy)
+			s.target.write(s.text)	
+				
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+		
+		clickCheck = function(s, t)
+			if not s.enabled then return end
+			
+			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
+				or s.target ~= term.native and t[1] == "mouse_click" then
+				return 
+			end
+
+			local px, py = 1, 1
+			if s._PARENT then
+				px = s._PARENT.x
+				py = s._PARENT.y
+			end
+			
+			if inBounds(t[3], t[4], s.x + px - 2, s.y + py - 2, s.x + px + s.width - 1, s.y + py + s.height - 2) then
+				s:used()
+				return true
+			end
+			return false
+		end,
+		
+		used = function(s)
+			s:draw(s.color_used)
+			sleep(0.01)
+			if s.func then s:func() end
+			s:draw()
+		end,
+	}
+	button = setmetatable(button, getDefaults())
+	
+	button.target = target
+	button.x = x
+	button.y = y
+	button.width = width
+	button.height = height
+	button.text = text
+	button.func = func
+	button.color_text = color_text
+	button.color_bg = color_bg
+	button.color_used = color_used
+	
+	return button
+end
+
+function NewProgressBar(target, x, y, width, height, color_bg, color_used)
+	local pbar = {
+		step = 0.01,
+		progress = 0.0,
+		
+		setProgress = function(s, np)
+			s.progress = (np > 1) and 1 or np
+			s:draw()
+		end,
+		
+		clear = function(s)
+			s.progress = 0
+			s:draw()
+		end,
+		
+		stepIt = function(s)
+			s.progress = s.progress + s.step
+			if s.progress > 1 then s.progress = 1 end
+			s:draw()
+		end,
+		
+		draw = function(s)
+			if not s.visible then return end
+			local cursorX, cursorY = term.getCursorPos()
+			
+			local px = 1
+			local py = 1
+			if s._PARENT then
+				px, py = s._PARENT.x, s._PARENT.y
+			end
+			
+			local pos = s.width * s.progress
+			if pos < s.width then
+				for i = 1, s.height do
+					drawLine(s.target, px + s.x + pos - 1, py + s.y + i - 2, px + s.x + s.width - 1, py + s.y + i - 2 , s.color_bg)
+				end
+			end
+			if pos > 0 then
+				for i = 1, s.height do
+					drawLine(s.target, px + s.x - 1, py + s.y + i - 2, px + s.x + pos - 1, py + s.y + i - 2 , s.color_used)
+				end
+			end
+			
+			local temp = tostring( math.floor(s.progress * 100) ).."%"
+			
+			local cx, cy = getTextLayoutPos(s.text_pos, temp, s.x, s.y, s.width, s.height, px, py)
+			s.target.setTextColor(s.color_text)
+			s.target.setCursorPos(cx, cy)
+			s.target.write(temp)	
+			
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+	}
+	pbar = setmetatable(pbar, getDefaults())
+	pbar.target = target
+	pbar.x = x
+	pbar.y = y
+	pbar.width = width
+	pbar.height = height
+	pbar.color_bg = color_bg
+	pbar.color_used = color_used
+	
+	return pbar
+end
+
+function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
+	local textarea = {
+		draw = function(s)
+			if not s.visible then return end
+			local cursorX, cursorY = s.target.getCursorPos()
+			
+			local px = 1
+			local py = 1
+			if s._PARENT then
+				px, py = s._PARENT.x, s._PARENT.y
+			end
+			
+			for i = 1, s.height do
+				drawLine(s.target, px + s.x - 1, py + s.y + i - 2, px + s.x + s.width - 2, py + s.y + i - 2 , s.color_bg)
+			end
+			
+			local k = 0
+			for i = 1, string.len(s.text), s.width do
+				s.target.setCursorPos(px + s.x - 1, py + s.y + k - 1)
+				k = k + 1
+				s.target.setTextColor(s.color_text)
+				s.target.write(string.sub(s.text, i, i + s.width - 1))
+			end
+				
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+		
+		clickCheck = function(s, t)
+			if not s.enabled then return end
+			
+			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
+				or s.target ~= term.native and t[1] == "mouse_click" then
+				return 
+			end
+
+			local px, py = 1, 1
+			if s._PARENT then
+				px = s._PARENT.x
+				py = s._PARENT.y
+			end
+			
+			if inBounds(t[3], t[4], s.x + px - 2, s.y + py - 2, s.x + px + s.width - 1, s.y + py + s.height - 2) then
+				SELECTED_OBJECT = s
+				return true
+			end
+			return false
+		end,
+		
+		eventReact = function(s, e)
+			
+		end,
+	}
+	textarea = setmetatable(textarea, getDefaults())
+	textarea.target = target
+	textarea.x = x
+	textarea.y = y
+	textarea.width = width
+	textarea.height = height
+	textarea.text = text
+	textarea.color_bg = color_bg
+	textarea.color_text = color_text
+	return textarea
+end
+
+function NewLabel(target, x, y, text, color_bg, color_text)
+	local label = {
+		draw = function(s)
+			if not s.visible then return end
+			local cursorX, cursorY = s.target.getCursorPos()
+			
+			local px = 1
+			local py = 1
+			if s._PARENT then
+				px, py = s._PARENT.x, s._PARENT.y
+			end
+	
+			drawLine(s.target, px + s.x - 1, py + s.y - 1, px + s.x + string.len(s.text) - 2, py + s.y - 1 , s.color_bg)
+			s.target.setTextColor(s.color_text)
+			s.target.setCursorPos(px + s.x - 1, py + s.y - 1)
+			s.target.write(s.text)
+			
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+	}
+	label = setmetatable(label, getDefaults())
+	label.target = target
+	label.x = x
+	label.y = y
+	label.text = text
+	label.color_bg = color_bg
+	label.color_text = color_text
+	return label
+end
+
+
+local function exec(event, object)
+	if not object.enabled then return end
+	for _, child in pairs(object._CHILDREN) do
+		exec(event, child)
+		child:clickCheck(event)
+	end
+end
+
+MainPanel = NewPanel()
+
+function eventHandler(e)
+	if e[1] == "mouse_click" or e[1] == "monitor_touch" then
+		SELECTED_OBJECT = nil
+		exec(e, MainPanel)
+	elseif e[1] == "key" then
+		if SELECTED_OBJECT then
+			SELECTED_OBJECT:eventReact(e)
+		end
+	end
+	return e[1], e[2], e[3], e[4], e[5]
+end
+
+function os.pullEvent()
+	local e = { os.pullEventRaw() }
+	eventHandler(e)
+	return e[1], e[2], e[3], e[4], e[5]
+end
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
