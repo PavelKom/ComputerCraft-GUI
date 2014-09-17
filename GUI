@@ -185,7 +185,7 @@ local function getDefaults()
 			s.height = h
 		end,
 		
-		clickCheck = function(s) end,
+		clickCheck = function(s) return false end,
 		draw = function(s) end,
 		eventReact = function(s, e) end,
 		
@@ -478,6 +478,8 @@ function os.pullEvent()
 	eventHandler(e)
 	return e[1], e[2], e[3], e[4], e[5]
 end
+
+
 
 
 
