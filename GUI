@@ -144,7 +144,7 @@ local function getDefaults()
 		func = nil,
 		text_pos = "center",
 		color_text = colors.white,
-		color_bg = colors.green,
+		color_bg = colors.blue,
 		color_used = colors.red,
 		_PARENT = nil,
 		_CHILDREN = {},
@@ -152,13 +152,6 @@ local function getDefaults()
 		addPARENT = function(s, object)
 			s._PARENT = object
 		end,
-		
-		--addCHILD = function(s, ...)
-		--	for _, object in pairs(...) do
-			--	table.insert(s._CHILDREN, object)
-			--	object:addPARENT(s)
-			--end
-		--end,
 		
 		addCHILD = function(s, object) end,
 		
@@ -174,9 +167,26 @@ local function getDefaults()
 			s.visible = true
 		end,
 		
+		showNDraw = function(s)
+			s:show()
+			s:draw()
+		end,
+		
 		hide = function(s)
 			s.visible = false
 		end,
+		
+		hideNDisable = function(s)
+			s:hide()
+			s:disable()
+		end,
+		
+		showNEnable = function(s)
+			s:showNDraw()
+			s:enable()
+		end,
+		
+		
 		
 		move = function(s, x, y)
 			s.x = x
@@ -213,8 +223,9 @@ end
 --Panel constructor
 function NewPanel(x, y, visible, enabled)
 	local panel = {
-		addCHILD = function(s, array)
-			for _, object in pairs(array) do
+		addCHILD = function(s, ...)
+			local args = {...}
+			for _, object in pairs(args) do
 				table.insert(s._CHILDREN, object)
 				object:addPARENT(s)
 			end
@@ -247,9 +258,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 			local cursorX, cursorY = s.target.getCursorPos()
 			
 			s:_dynRefresh()
-			--for i = 1, s.height do
-			--	drawLine(s.target, s.dynX, s.dynY + i - 1, s.dynX + s.width - 1, s.dynY + i - 1 , color)
-			--end
+			
 			drawRect(s.target, s.dynX, s.dynY, s.width, s.height, color)
 			
 			local cx, cy = getTextLayoutPos(s.text_pos, s.text, s.dynX, s.dynY, s.width, s.height)
@@ -472,8 +481,9 @@ function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 			if e[1] == "key" then
 				if e[2] == 28 then
 					--testing
-				elseif e[2] == 20 then
-					--testing
+				elseif e[2] == 14 then
+					s.text = string.sub(s.text, 1, #s.text - 1)
+					s:draw()
 				end
 			elseif e[1] == "char" then
 				s.text = s.text .. e[2] --testing
