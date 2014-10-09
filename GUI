@@ -136,8 +136,8 @@ local function getDefaults()
 		y = 1,
 		dynX = 1,
 		dynY = 1,
-		width = 0,
-		height = 0,
+		width = 1,
+		height = 1,
 		enabled = true,
 		visible = true,
 		text = "",
@@ -186,7 +186,10 @@ local function getDefaults()
 			s:enable()
 		end,
 		
-		
+		setText = function(s, t)
+			s.text = t
+			s:draw()
+		end,
 		
 		move = function(s, x, y)
 			s.x = x
@@ -437,6 +440,94 @@ function NewProgressBar(target, x, y, width, height, color_bg, color_used)
 	return pbar
 end
 
+function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
+	local textline = {
+	
+		_textpos = 1,
+		_cursorpos = 1,
+		
+		draw = function(s)
+			if not s.visible then return end
+			local cursorX, cursorY = s.target.getCursorPos()
+			
+			s:_dynRefresh()
+			
+			drawRect(s.target, s.dynX, s.dynY, s.width, 1, s.color_bg)
+
+			s.target.setTextColor(s.color_text)
+			s.target.setCursorPos(s.dynX, s.dynY)
+			s.target.write(string.sub(s.text, s._textpos, s._textpos + s.width))
+				
+			s.target.setCursorPos(cursorX, cursorY)
+		end,
+		
+		clickCheck = function(s, t)
+			if not s.enabled then return end
+			
+			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
+				or s.target ~= term.native and t[1] == "mouse_click" then
+				return 
+			end
+
+			s:_dynRefresh()
+			
+			if inBounds(t[3], t[4], s.dynX, s.dynY, s.width - 1, s.height - 1) then
+				SELECTED_OBJECT = s
+				return true
+			end
+			return false
+		end,
+		
+		eventReact = function(s, e)
+			if not s.enabled then return end
+			if e[1] == "key" then
+				if e[2] == 28 then
+					s:used()
+					SELECTED_OBJECT = nil
+				elseif e[2] == 14 then
+					s.text = string.sub(s.text, 1, #s.text - 1)
+					s._cursorpos = s._cursorpos - 1
+					
+					if s._cursorpos <= s._textpos then
+						s._textpos = s._textpos - 4
+					end
+					if s._textpos < 1 then
+						s._textpos = 1
+					end
+					if s._cursorpos < 1 then
+						s._cursorpos = 1
+					end
+					
+					s:draw()
+				elseif e[2] == 203 then
+				--left
+				elseif e[2] == 205 then
+				--right
+				end
+			elseif e[1] == "char" then
+				s.text = s.text .. e[2] --testing
+				
+				s._cursorpos = s._cursorpos + 1
+				
+				if s._cursorpos > s._textpos + s.width - 1 then
+					s._textpos = s._textpos + 1
+				end
+				
+				s:draw()
+		end,
+	}
+	textline = setmetatable(textline, getDefaults())
+	textline.target = target
+	textline.x = x
+	textline.y = y
+	textline.width = width
+	textline.text = text
+	textline.func = func
+	textline.color_bg = color_bg
+	textline.color_text = color_text
+	return textline
+end
+
 --TextArea constructor
 function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 	local textarea = {
@@ -446,7 +537,7 @@ function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 			
 			s:_dynRefresh()
 			
-			drawRect(s.target, s.dynX, s.dynY, s.width, s.dynY, s.color_bg)
+			drawRect(s.target, s.dynX, s.dynY, s.width, s.height, s.color_bg)
 			
 			local k = 0
 			for i = 1, string.len(s.text), s.width do
