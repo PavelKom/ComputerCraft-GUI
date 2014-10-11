@@ -442,7 +442,7 @@ end
 
 function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 	local textline = {
-	
+		secure = false,
 		_textpos = 1,
 		_cursorpos = 1,
 		
@@ -456,7 +456,14 @@ function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 
 			s.target.setTextColor(s.color_text)
 			s.target.setCursorPos(s.dynX, s.dynY)
-			s.target.write(string.sub(s.text, s._textpos, s._textpos + s.width))
+			local temp = string.sub(s.text, s._textpos, s._textpos + s.width)
+			if s.secure then
+				for i = 1, #temp do
+					s.target.write("*")
+				end
+			else
+				s.target.write(temp)
+			end
 				
 			s.target.setCursorPos(cursorX, cursorY)
 		end,
@@ -514,6 +521,7 @@ function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 				end
 				
 				s:draw()
+			end
 		end,
 	}
 	textline = setmetatable(textline, getDefaults())
