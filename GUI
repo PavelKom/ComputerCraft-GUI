@@ -291,7 +291,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 		
 		used = function(s)
 			s:draw(s.color_used)
-			sleep(0.01)
+			--sleep(0.01)
 			if s.func then s:func() end
 			s:draw()
 		end,
@@ -354,7 +354,7 @@ function NewCheckBox(target, x, y, width, height, text, func, color_bg, color_te
 		used = function(s)
 			s.check = not s.check
 			s:draw(s.color_used)
-			sleep(0.01)
+			--sleep(0.01)
 			if s.func then s:func() end
 			s:draw()
 		end,
