@@ -76,6 +76,34 @@ end
 -------------------------------------------------------------------------------------------
 local peripheralPool = {}
 local SELECTED_OBJECT = nil
+-------------------------------------------------------------------------------------------
+---PUBLIC GUI API
+-------------------------------------------------------------------------------------------
+function SET_SELECTED_OBJECT(OBJ)
+	SELECTED_OBJECT = OBJ
+end
+
+function CLEAR_SCREEN(color, target)
+	if not target then target = term.native end
+	target.setBackgroundColor(color)
+	target.clear()
+end
+
+function NO_EXIT()
+	os.pullEvent("GUI_USER_EXIT")
+	cleanup()
+end
+
+function EXIT()
+	os.queueEvent("GUI_USER_EXIT")
+end
+
+local function cleanup(object)
+	for _, child in pairs(object._CHILDREN) do
+		cleanup(child)
+		child = nil
+	end
+end
 
 local function getPeripheralName(p)
 	return peripheralPool[p]
@@ -170,6 +198,11 @@ local function getDefaults()
 		showNDraw = function(s)
 			s:show()
 			s:draw()
+		end,
+		
+		showNDrawNEnable = function(s)
+			s:showNDraw()
+			s:enable()
 		end,
 		
 		hide = function(s)
@@ -480,8 +513,8 @@ function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 			if not s.enabled then return end
 			if e[1] == "key" then
 				if e[2] == 28 then
-					s:used()
 					SELECTED_OBJECT = nil
+					s:used()
 				elseif e[2] == 14 then
 					s.text = string.sub(s.text, 1, #s.text - 1)
 					s._cursorpos = s._cursorpos - 1
@@ -654,5 +687,3 @@ function os.pullEvent()
 	eventHandler(e)
 	return e[1], e[2], e[3], e[4], e[5]
 end
-
-
