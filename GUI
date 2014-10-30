@@ -94,7 +94,7 @@ function NO_EXIT()
 		local event = os.pullEventRaw()
 		if event == "GUI_USER_EXIT" then break end
 	end
-	cleanup()
+	cleanup(MainPanel)
 end
 
 function EXIT()
