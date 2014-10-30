@@ -90,7 +90,10 @@ function CLEAR_SCREEN(color, target)
 end
 
 function NO_EXIT()
-	os.pullEvent("GUI_USER_EXIT")
+	while true do	
+		local event = os.pullEventRaw()
+		if event == "GUI_USER_EXIT" then break end
+	end
 	cleanup()
 end
 
