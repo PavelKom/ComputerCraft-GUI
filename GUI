@@ -76,6 +76,7 @@ end
 -------------------------------------------------------------------------------------------
 local peripheralPool = {}
 local SELECTED_OBJECT = nil
+local backupPullEvent = nil
 -------------------------------------------------------------------------------------------
 ---PUBLIC GUI API
 -------------------------------------------------------------------------------------------
@@ -84,16 +85,13 @@ function SET_SELECTED_OBJECT(OBJ)
 end
 
 function CLEAR_SCREEN(color, target)
-	if not target then target = term.native end
+	if not target then target = term.native() end
 	target.setBackgroundColor(color)
 	target.clear()
 end
 
 function NO_EXIT()
-	while true do	
-		local event = os.pullEventRaw()
-		if event == "GUI_USER_EXIT" then break end
-	end
+	os.pullEvent("GUI_USER_EXIT")
 	cleanup(MainPanel)
 end
 
@@ -159,10 +157,10 @@ local function inBounds(x, y, x1, y1, w, h)
 	return false
 end
 
---Defaults for all obkects
+--Defaults for all objects
 local function getDefaults()
 	local mt = {
-		target = term.native,
+		target = term.native(),
 		x = 1,
 		y = 1,
 		dynX = 1,
@@ -312,7 +310,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 			if not s.enabled then return end
 			
 			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
-				or s.target ~= term.native and t[1] == "mouse_click" then
+				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
 
@@ -367,7 +365,7 @@ function NewCheckBox(target, x, y, width, height, text, func, color_bg, color_te
 			if not s.enabled then return end
 			
 			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
-				or s.target ~= term.native and t[1] == "mouse_click" then
+				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
 
@@ -499,7 +497,7 @@ function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 			if not s.enabled then return end
 			
 			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
-				or s.target ~= term.native and t[1] == "mouse_click" then
+				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
 
@@ -568,7 +566,7 @@ function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 	local textarea = {
 		draw = function(s)
 			if not s.visible then return end
-			local cursorX, cursorY = s.target.getCursorPos()
+			local cursorX, cursorY = s.target.t()
 			
 			s:_dynRefresh()
 			
@@ -589,7 +587,7 @@ function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
 			if not s.enabled then return end
 			
 			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
-				or s.target ~= term.native and t[1] == "mouse_click" then
+				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
 
@@ -684,6 +682,8 @@ function eventHandler(e)
 		end
 	end
 end
+
+backupPullEvent = os.pullEvent
 
 function os.pullEvent()
 	local e = { os.pullEventRaw() }
