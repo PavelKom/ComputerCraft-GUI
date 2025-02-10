@@ -90,20 +90,22 @@ function CLEAR_SCREEN(color, target)
 	target.clear()
 end
 
+local function cleanup(object)
+	for _, child in pairs(object._CHILDREN) do
+		cleanup(child)
+		setmetatable(child, {})
+		child = nil
+	end
+end
+
 function NO_EXIT()
 	os.pullEvent("GUI_USER_EXIT")
 	cleanup(MainPanel)
+	collectgarbage()
 end
 
 function EXIT()
 	os.queueEvent("GUI_USER_EXIT")
-end
-
-local function cleanup(object)
-	for _, child in pairs(object._CHILDREN) do
-		cleanup(child)
-		child = nil
-	end
 end
 
 local function getPeripheralName(p)
