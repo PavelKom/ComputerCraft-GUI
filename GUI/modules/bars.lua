@@ -177,7 +177,8 @@ function Canvas:new(kw)
 	canvas.y = kw.y
     canvas.width = kw.width or kw.w
     canvas.height = kw.height or kw.h
-    canvas.frame = GUI.Predraw(canvas.target, kw.color_bg or kw.bg or colors.white)
+    canvas.color_bg = kw.color_bg or kw.bg or colors.black
+    canvas.frame = GUI.Predraw(canvas.target, canvas.color_bg)
 
     local master = kw[1] or kw.master or GUI.MainPanel
     if master then

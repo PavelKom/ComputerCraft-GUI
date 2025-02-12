@@ -2,7 +2,8 @@
     Autoloader for GUI API
 ]]
 if GUI then
-    return GUI
+    GUI.updateThread()
+    return _G.GUI
 end
 
 -- Load API
@@ -20,10 +21,7 @@ end
 for _,path in pairs(fs.list(rel_path)) do
     local p = rel_path..path
 	if fs.exists(p) and not fs.isDir(p) and string.match(p, ".+%.lua") then
-        --dofile(p) -- Execute modules
         loadfile(p,nil,_ENV)()
-        --require(p:sub(1,-5))
     end
 end
-
 return GUI

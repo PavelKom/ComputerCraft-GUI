@@ -56,6 +56,7 @@ end
 local function cleanup(object)
 	for k, child in pairs(object._CHILDREN or {}) do
 		cleanup(child)
+		setmetatable(object, nil) -- Remove metatable
 		object._CHILDREN[k] = nil -- MOST IMPORTANT PART!!! UNBIND BY KEY
 	end
 end
@@ -304,12 +305,15 @@ local defaults = {
     end,
 
 	erase = function(s)
-		if s._PARENT then
+		local p = s._PARENT
+		if p then
 			for k,v in pairs(s._PARENT._CHILDREN or {}) do
 				if s == v then s._PARENT._CHILDREN[k] = nil; break end
 			end
 		end
 		cleanup(s)
+		
+		if p then sleep(0); p:draw() end
 	end,
 	draw2 = function(s) s:draw(); s:draw() end,
 }
@@ -318,6 +322,7 @@ addLocals('defaults', defaults)
 Panel = {}
 Panel.help = "Panel{master, target=target, x=x, y=y, visible=visible, enabled=enabled}"
 function Panel:new(kw) -- Panel{master, x=x,y=y,...}
+	kw = kw or {}
     local widget = NewPanel(kw.x, kw.y, kw.visible, kw.enabled)
     local master = kw[1] or kw.master or MainPanel
     if master then
@@ -390,7 +395,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 			local cx, cy = getTextLayoutPos(s.text_pos, s.text, s.dynX, s.dynY, s.width, s.height)
 			s.target.setTextColor(s.color_text)
 			s.target.setCursorPos(cx, cy)
-			s.target.write(s.text)	
+			s.target.write(s.text)
 				
 			s.target.setCursorPos(cursorX, cursorY)
 		end,
@@ -398,7 +403,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 		clickCheck = function(s, t)
 			if not s.enabled then return end
 			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName() --getPeripheralName(s.target) 
+			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target) --getPeripheralName(s.target) 
 				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return
 			end
@@ -412,8 +417,7 @@ function NewButton(target, x, y, width, height, text, func, color_bg, color_text
 			return false
 		end,
 	}
-	--button = setmetatable(button, getDefaults())
-	button = setmetatable(button, {__index=defaults, __name="Button"}) -- need test
+	button = setmetatable(button, {__index=defaults, __name="Button"})
 	button.target = target
 	button.x = x
 	button.y = y
@@ -470,7 +474,7 @@ function NewCheckBox(target, x, y, width, height, text, func, color_bg, color_te
 		clickCheck = function(s, t)
 			if not s.enabled then return end
 			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target) 
+			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target)
 				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
@@ -582,8 +586,8 @@ function NewProgressBar(target, x, y, width, height, func, color_bg, color_text,
 			local blit_bg = string.rep(colors.toBlit(s.color_bg),pos)..string.rep(colors.toBlit(s.color_used),s.width-pos)
 			local blit_fg = string.rep(colors.toBlit(s.color_text),s.width)
 			local blit_noText = string.rep(" ", s.width)
-			local dXText = math.floor(0.5+ (s.width - #s.text) / 2) - 1
-			local blit_text = string.sub(string.rep(" ", dXText)..s.text..string.rep(" ", dXText+2), 1, #blit_noText)
+			local dXText = math.floor(0.5+ (s.width - #s.text) / 2)
+			local blit_text = string.sub(string.rep(" ", dXText)..s.text..string.rep(" ", dXText+1), 1, #blit_noText)
 			for i=s.dynY, s.dynY+s.height-1 do
 				s.target.setCursorPos(s.dynX,i)
 				if i ~= cy then
@@ -659,7 +663,7 @@ function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
 		clickCheck = function(s, t)
 			if not s.enabled then return end
 			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target) 
+			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target)
 				or s.target ~= term.native() and t[1] == "mouse_click" then
 				return 
 			end
@@ -859,7 +863,7 @@ local function exec(event, object)
 	if not object.enabled then return end
 	for _, child in pairs(object._CHILDREN) do
 		exec(event, child)
-		if child:clickCheck(event) then
+		if child.clickCheck and child:clickCheck(event) then
 			return true
 		end
 	end
@@ -890,5 +894,105 @@ end
 function DRAW()
 	MainPanel:draw()
 end
+
+-- From 
+-- https://computercraft.ru/topic/393-mnogopotochnost-v-computercraft/
+-- https://pastebin.com/32S4HssH
+
+-- Think method for autoupdate by time
+
+pullEventRawBackup = os.pullEventRaw
+
+
+local _filter_m = {
+	__len=function(self)
+		local i = 0
+		for _,_ in pairs(self) do i = i + 1 end
+		return i
+	end
+}
+-- Patch for multishell loads
+local mainThread={coroutine.running()}
+local filter=setmetatable({},_filter_m)
+
+function updateThread()
+	local running = coroutine.running()
+	local toAdd = true
+	for i=1, #mainThread do
+		if running == mainThread[i] then
+			toAdd = false
+			break
+		end
+	end
+	if toAdd then
+		mainThread[#mainThread+1]=coroutine.running()
+	end
+end
+
+local function SingleThread( _sFilter )
+    return coroutine.yield( _sFilter )
+end
+local thread = false
+local function MultiThread( _sFilter )
+	for i=#mainThread, 1, -1 do
+		if coroutine.running()==mainThread[i] then
+			thread = true
+			local event,co
+			repeat
+				event={coroutine.yield()}
+				co=next(filter)
+				if not co then os.pullEventRaw=SingleThread end
+				while co do
+					if coroutine.status( co ) == "dead" then
+						filter[co],co=nil,next(filter,co)
+					else
+						if filter[co] == '' or filter[co] == event[1] or event[1] == "terminate" then
+						local ok, param = coroutine.resume( co, unpack(event) )
+						if not ok then filter={} error( param )
+						else filter[co] = param or '' end
+						end
+						co=next(filter,co)
+					end
+				end
+			until _sFilter == nil or _sFilter == event[1] or event[1] == "terminate"
+			return unpack(event)
+		end
+		if type(mainThread[i]) ~= 'thread' or coroutine.status( mainThread[i] ) == "dead" then
+			table.remove(mainThread, i)
+		end
+	end
+  	return coroutine.yield( _sFilter )
+end
+ 
+
+function create(f,...)
+  os.pullEventRaw=MultiThread
+  local co=coroutine.create(f)
+  filter[co]=''
+  local ok, param = coroutine.resume( co, ... )
+  if not ok then filter={} error( param )
+  else filter[co] = param or '' end
+  updateThread()
+  return co
+end
+think = create
+ 
+
+function kill()
+  filter[co]=nil
+end
+ 
+
+function killAll()
+  filter=setmetatable({},_filter_m)
+  os.pullEventRaw=SingleThread
+end
+
+function busy()
+	return #filter > 0
+end
+
+
+
 
 

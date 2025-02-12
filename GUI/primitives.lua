@@ -95,7 +95,7 @@ local function drawRect(target, x1, y1, w, h, nColor)
 		drawHorisontal(target, x1, y1+i, x1+w-1, nColor)
 	end
 end
-local function drawRect2(target, x1, y1, x2, y2, nColor)
+local function drawRectAbs(target, x1, y1, x2, y2, nColor)
 	for i = y1, y2 do
 		drawHorisontal(target, x1, i, x2, nColor)
 	end
@@ -107,7 +107,7 @@ local function drawBox(target, x1, y1, w, h, nColor)
     drawLine(target, x1 + w - 1, y1, x1 + w - 1, y1 + h - 1, nColor)
     drawLine(target, x1, y1, x1, y1 + h - 1, nColor)
 end
-local function drawBox2(target, x1, y1, x2, y2, nColor)
+local function drawBoxAbs(target, x1, y1, x2, y2, nColor)
     drawHorisontal(target, x1, y1, x2, nColor)
     drawHorisontal(target, x1, y2, x2, nColor)
     drawLine(target, x1, y1, x1, y2, nColor)
@@ -244,9 +244,9 @@ local lib = {
     drawLine=drawLine,
     drawHorisontal=drawHorisontal,
     drawRect=drawRect,
-    drawRectAbs=drawRect2,
+    drawRectAbs=drawRectAbs,
     drawBox=drawBox,
-    drawBox2=drawBox2,
+    drawBoxAbs=drawBoxAbs,
     drawCircle=drawCircle,
     drawLineDegree=drawLineDegree,
     drawLineRadian=drawLineRadian,

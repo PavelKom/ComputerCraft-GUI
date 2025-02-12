@@ -249,6 +249,7 @@ local function draw(tbl, relX, relY) -- Drawing from relX or 1, relY or 1
     local dX, dY = (relX or 1)-1, (relY or 1)-1
     local tX, tY = tbl.target.getSize()
     local cX, buffer, bg, fg
+    local _bg = tbl.target.getBackgroundColor()
     for y=1, tY-dY do
         tbl[y] = tbl[y] -- Autogenerate empty rows
         if #tbl[y] == 0 then goto continue end
@@ -267,8 +268,15 @@ local function draw(tbl, relX, relY) -- Drawing from relX or 1, relY or 1
                 cX = 0
             end
         end
+        if cX > 0 then
+            tbl.target.setCursorPos(cX+dX,y+dY)
+            tbl.target.blit(buffer, fg, bg)
+            buffer, bg, fg = "", "", ""
+            cX = 0
+        end
         ::continue::
     end
+    tbl.target.setBackgroundColor(_bg)
 end
 local function clear(tbl)
     local _, tY = tbl.target.getSize()
@@ -294,7 +302,7 @@ local _m = { -- Metatable for predraw object
 
 local function getPredrawTbl(target, nColor)
     local tbl = {target=target or term.native(), }
-    tbl.nColor=nColor or tbl.target.getBackgroundCOlor()
+    tbl.nColor=nColor or tbl.target.getBackgroundColor()
     --With absolute coordinates
     tbl.line = line
     tbl.h = horizontal
@@ -322,12 +330,6 @@ local function getPredrawTbl(target, nColor)
     tbl.draw = draw
     tbl.clear = clear
     return setmetatable(tbl, _m)
-end
-
-local function getPredrawTblEx(target, nColor)
-    local tbl = {target=target or term.native(), }
-    tbl.nColor=nColor or tbl.target.getBackgroundCOlor()
-
 end
 
 GUI.Predraw = getPredrawTbl
