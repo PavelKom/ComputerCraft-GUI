@@ -20,7 +20,7 @@ for i=0, 15 do
 end
 
 local function noDraw(...) end
-local function pixel(tbl, x,y,nColor) tbl[y][x]=blit_keys[nColor] end
+local function pixel(tbl, x,y,nColor) tbl[y][x]=blit_keys[nColor or tbl.nColor] end
 
 local function angToPos(x, y, r,ang)
     local _r = r + 0.25
@@ -304,6 +304,7 @@ local function getPredrawTbl(target, nColor)
     local tbl = {target=target or term.native(), }
     tbl.nColor=nColor or tbl.target.getBackgroundColor()
     --With absolute coordinates
+    tbl.pixel = pixel
     tbl.line = line
     tbl.h = horizontal
     tbl.v = vertical

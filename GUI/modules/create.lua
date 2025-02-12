@@ -304,7 +304,7 @@ function RotationSpeedControllerAuto:new(kw)
 
         s.target.setCursorPos(cursorX, cursorY)
     end
-    rsc.canvas.frame:box(1,1,10,6,colors.orange)
+    rsc.canvas.frame:box(1,1,10,6,colors.orange) -- frame
     rsc.__buttons = {
         bMove = GUI.Button{rsc, target=kw.target,
             x=1,y=1, bg=colors.blue, text=">"},
@@ -347,6 +347,15 @@ function RotationSpeedControllerAuto:new(kw)
             func=function(s) rsc_auto_callback(s, 2, 0) end},
 
     }
+    rsc.canvas.frame:pixel(10,1,colors.red) -- close
+    rsc.canvas.frame:pixel(1,1,colors.blue) -- move
+    rsc.canvas.frame:pixel(2,3,colors.magenta) -- reverse
+    rsc.canvas.frame:line2(6,3,4,1,colors.blue) -- delta
+    rsc.canvas.frame:line2(2,4,1,2,colors.blue) -- -10
+    rsc.canvas.frame:line2(3,4,1,2,colors.blue) -- -1
+    rsc.canvas.frame:line2(8,4,1,2,colors.blue) -- +1
+    rsc.canvas.frame:line2(9,4,1,2,colors.blue) -- +1
+
     rsc.__buttons.bMove._clickCheck = rsc.__buttons.bMove.clickCheck
     rsc.__buttons.bMove.clickCheck = function(s, t)
         if not s._active then
@@ -375,6 +384,9 @@ function RotationSpeedControllerAuto:new(kw)
         labelMin = GUI.Label{rsc,target=kw.target,
             x=4,y=5,text="000",bg=colors.brown},
     }
+    rsc.canvas.frame:line2(2,2,8,1,colors.gray) -- label
+    rsc.canvas.frame:line2(3,3,4,1,colors.brown) -- speed
+    rsc.canvas.frame:box2(2,2,4,2,colors.brown) -- min/max
 
     calibrate(rsc)
     GUI.think(rsc_auto_think, rsc)
