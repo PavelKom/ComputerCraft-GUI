@@ -1,5 +1,6 @@
 --[[
     Gauge widget for GUI API
+	TODO: rewrite for new API
 ]]
 
 if not GUI then

@@ -43,7 +43,13 @@ local drawLine = _l.primitives.drawLine
 local drawRect = _l.primitives.drawRect
 -------------------------------------------------
 local SELECTED_OBJECT = nil
+local MainPanel = nil
 local backupPullEvent = os.pullEvent
+local epfMonitor = nil
+do
+	local res, err = pcall(require, "epf.cc.monitor")
+	if res then epfMonitor = err end
+end
 -------------------------------------------------
 function SET_SELECTED_OBJECT(OBJ)
 	SELECTED_OBJECT = OBJ
@@ -62,7 +68,7 @@ local function cleanup(object)
 end
 addLocals('cleanup', cleanup)
 function CLEAN()
-	cleanup(MainPanel)
+	cleanup(obj or MainPanel)
 end
 
 local function guiLoopN(name)
@@ -77,18 +83,18 @@ local function no_exit()
 	os.pullEvent("GUI_USER_EXIT")
 end
 addLocals('no_exit', no_exit)
-function NO_EXIT_CUSTOM(...)
+function NO_EXIT_CUSTOM(obj, ...)
 	local loops = {}
+	if type(obj) == 'string' then loops[#loops+1] = guiLoopN(obj) end -- No obj, only events
 	for _, v in pairs{...} do loops[#loops+1] = guiLoopN(v) end
 	parallel.waitForAny(no_exit, table.unpack(loops))
-	cleanup(MainPanel)
-	--collectgarbage()
+	cleanup(obj)
 end
-function NO_EXIT()
-	NO_EXIT_CUSTOM('mouse_click', 'monitor_touch', 'key', 'char')
+function NO_EXIT(obj)
+	NO_EXIT_CUSTOM(obj, 'mouse_click', 'monitor_touch', 'key', 'char')
 end
-function EXIT()
-	os.queueEvent("GUI_USER_EXIT")
+function EXIT(obj)
+	os.queueEvent("GUI_USER_EXIT", obj)
 end
 local function getTextLayoutPos(layout, text, x, y, width, height, px, py)
 	if layout == "topleft" then
@@ -166,696 +172,484 @@ local function inBounds(x, y, x1, y1, w, h)
 	return false
 end
 addLocals('inBounds', inBounds)
---Defaults for all objects
-local function getDefaults()
-	local _mt = {
-		target = term.native(),
-		x = 1, y = 1,
-		dynX = 1, dynY = 1,
-		width = 1, height = 1,
-		enabled = true, visible = true,
-		text = "", func = nil,
-		text_pos = "center",
-		color_text = colors.white, color_bg = colors.blue, color_used = colors.red,
-		_PARENT = nil, _CHILDREN = {},
-		addPARENT = function(s, object) s._PARENT = object end,
-		addCHILD = function(s, ...) end,
-		enable = function(s) s.enabled = true end,
-		disable = function(s) s.enabled = false end,
-		show = function(s) s.visible = true end,
-		showNDraw = function(s) s:show(); s:draw() end,
-		showNDrawNEnable = function(s) s:showNDraw(); s:enable() end,
-		hide = function(s) s.visible = false end,
-		hideNDisable = function(s) s:hide(); s:disable() end,
-		showNEnable = function(s) s:showNDraw(); s:enable() end,
-		setText = function(s, t) s.text = t; s:draw() end,
-		move = function(s, x, y) s.x = x; s.y = y; s:_dynRefresh() end,
-		resize = function(s, w, h) s.width = w; s.height = h end,
-		_dynRefresh = function(s)
-			px, py = 1, 1
-			if s._PARENT then
-				px, py = s._PARENT.dynX, s._PARENT.dynY
-			end
-			s.dynX = s.x + px - 1
-			s.dynY = s.y + py - 1
-		end,
-		clickCheck = function(s) return false end,
-		draw = function(s) end,
-		eventReact = function(s, e) end,
-		used = function(s) if s.func then s:func(); s:draw() end end,
-		erase = function(s)
-			if s._PARENT then
-				for k,v in pairs(s._PARENT._CHILDREN or {}) do
-					if s == v then s._PARENT._CHILDREN[k] = nil; break end
-				end
-			end
-			cleanup(s)
-		end,
-		draw2 = function(s) s:draw(); s:draw() end,
-	}
-	
-	return _mt -- For __index
-end
-addLocals('getDefaults', getDefaults)
--- Non-recreating method
-local defaults = {
-    target = term.native(),
-    x = 1, y = 1,
-    dynX = 1, dynY = 1,
-    width = 1, height = 1,
-    enabled = true, visible = true,
-    text = "", func = nil,
-    text_pos = "center",
-    color_text = colors.white, color_bg = colors.blue, color_used = colors.red,
-    _PARENT = nil, _CHILDREN = {},
-    
-    addPARENT = function(s, object)
-        s._PARENT = object
-    end,
-    
-    addCHILD = function(s, ...) end,
-    
-    enable = function(s)
-        s.enabled = true
-    end,
-    
-    disable = function(s)
-        s.enabled = false
-    end,
-    
-    show = function(s)
-        s.visible = true
-    end,
-    
-    showNDraw = function(s)
-        s:show()
-        s:draw()
-    end,
-    
-    showNDrawNEnable = function(s)
-        s:showNDraw()
-        s:enable()
-    end,
-    
-    hide = function(s)
-        s.visible = false
-    end,
-    
-    hideNDisable = function(s)
-        s:hide()
-        s:disable()
-    end,
-    
-    showNEnable = function(s)
-        s:showNDraw()
-        s:enable()
-    end,
-    
-    setText = function(s, t)
-        s.text = t
-        s:draw()
-    end,
-    
-    move = function(s, x, y)
-        s.x = x
-        s.y = y
-        s:_dynRefresh()
-    end,
-    
-    resize = function(s, w, h)
-        s.width = w
-        s.height = h
-    end,
-    
-    _dynRefresh = function(s)
-        px, py = 1, 1
-        if s._PARENT then
-            px, py = s._PARENT.dynX, s._PARENT.dynY
-        end
-        s.dynX = s.x + px - 1
-        s.dynY = s.y + py - 1
-    end,
-    
-    clickCheck = function(s) return false end,
-    draw = function(s) end,
-    eventReact = function(s, e) end,
-    
-    used = function(s)
-        if s.func then s:func(); sleep(0); s:draw() end
-    end,
 
+local DEFAULTS = {
+	target = term.native(),
+	x = 1, y = 1,
+	dynX = 1, dynY = 1,
+	width = 1, height = 1,
+	enabled = true, visible = true,
+	text = "", func = nil,
+	text_pos = "center",
+	color_text = colors.white, color_bg = colors.blue, color_used = colors.red,
+	_PARENT = nil, _CHILDREN = {},
+	addPARENT = function(s, object) s._PARENT = object end,
+	addCHILD = function(s, ...) end,
+	enable = function(s) s.enabled = true end,
+	disable = function(s) s.enabled = false end,
+	show = function(s) s.visible = true end,
+	showNDraw = function(s) s:show(); s:draw() end,
+	showNDrawNEnable = function(s) s:showNDraw(); s:enable() end,
+	hide = function(s) s.visible = false end,
+	hideNDisable = function(s) s:hide(); s:disable() end,
+	showNEnable = function(s) s:showNDraw(); s:enable() end,
+	setText = function(s, t) s.text = t; s:draw() end,
+	move = function(s, x, y) s.x = x; s.y = y; s:_dynRefresh() end,
+	resize = function(s, w, h) s.width = w; s.height = h end,
+	_dynRefresh = function(s)
+		px, py = 1, 1
+		if s._PARENT then
+			px, py = s._PARENT.dynX, s._PARENT.dynY
+		end
+		s.dynX = s.x + px - 1
+		s.dynY = s.y + py - 1
+	end,
+	clickCheck = function(s) return false end,
+	draw = function(s) end,
+	eventReact = function(s, e) end,
+	used = function(s) if s.func then s:func(); s:draw() end end,
 	erase = function(s)
-		local p = s._PARENT
-		if p then
+		if s._PARENT then
 			for k,v in pairs(s._PARENT._CHILDREN or {}) do
 				if s == v then s._PARENT._CHILDREN[k] = nil; break end
 			end
 		end
 		cleanup(s)
-		
-		if p then sleep(0); p:draw() end
 	end,
 	draw2 = function(s) s:draw(); s:draw() end,
 }
-addLocals('defaults', defaults)
+addLocals('DEFAULTS', DEFAULTS)
+
+local function parseTarget(target)
+	local t = kw.target or kw.monitor or kw.terminal or kw.term
+	if t == nil then return nil end
+	if type(t) == 'string' then
+		if t == 'term' then return tern.native()
+		elseif epfMonitor then
+			return epfMonitor(t)
+		else
+			return peripheral.wrap(t)
+		end
+	else
+		return t
+	end
+end
+addLocals('parseTarget', parseTarget)
+
+local function parseCallback(target)
+	local c = kw.func or kw.call or kw.callback or kw.f
+	if c == nil then return nil end
+	if type(c) == 'function' then
+		return c
+	else
+		return load(tostring(c),nil,nil,_ENV)
+	end
+end
+addLocals('parseCallback', parseCallback)
 
 Panel = {}
-Panel.help = "Panel{master, target=target, x=x, y=y, visible=visible, enabled=enabled}"
-function Panel:new(kw) -- Panel{master, x=x,y=y,...}
-	kw = kw or {}
-    local widget = NewPanel(kw.x, kw.y, kw.visible, kw.enabled)
-    local master = kw[1] or kw.master or MainPanel
+function Panel.new(self, kw)
+	local widget = {_CHILDREN = {},
+		x=kw.x,y=kw.y,
+		visible = kw.visible
+		enabled = kw.enabled
+	}
+	local master = kw[1] or kw.master or MainPanel
     if master then
         master:addCHILD(widget)
     end
-    return widget
+	return setmetatable(widget, {__index=Panel, __name="Panel"})
 end
-setmetatable(Panel,{__call=Panel.new})
---Panel constructor
-function NewPanel(x, y, visible, enabled)
-	local panel = {
-		_CHILDREN = {},
-		addCHILD = function(s, ...)
-			local args = {...}
-			for _, object in pairs(args) do
-				table.insert(s._CHILDREN, object)
-				object:addPARENT(s)
-			end
-		end,
-		
-		draw = function(s)
-			if not s.visible then return end
-			s:_dynRefresh()
-			for _, child in pairs(s._CHILDREN) do
-				child:draw()
-			end
-		end
-	}
-	--panel = setmetatable(panel, getDefaults())
-	panel = setmetatable(panel, {__index=defaults, __name="Panel"}) -- need test
-	panel.x = x
-	panel.y = y
-	panel.visible = visible
-	panel.enabled = enabled
-	
-	return panel
+function Panel.addCHILD(self, ...)
+	local args = {...}
+	for _, object in pairs(args) do
+		table.insert(self._CHILDREN, object)
+		object:addPARENT(self)
+	end
 end
-MainPanel = setmetatable(NewPanel(), {__index=defaults, __name="MainPanel"})
+function Panel.draw(self)
+	if not self.visible then return end
+	self:_dynRefresh()
+	for _, child in pairs(self._CHILDREN) do
+		child:draw()
+	end
+end
+Panel = setmetatable(Panel, {__index=DEFAULTS, __call=Panel.new})
+MainPanel = Panel()
 
+Label = {}
+function Label.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		text = kw.text
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text
+	}
+	local master = kw[1] or kw.master or MainPanel
+    if master then
+        master:addCHILD(widget)
+    end
+	return setmetatable(widget, {__index=Label, __name="Label"})
+end
+function Label.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
+	
+	self:_dynRefresh()
+
+	drawLine(self.target, self.dynX, self.dynY, self.dynX + string.len(self.text) - 1, self.dynY , self.bg)
+	self.target.setTextColor(self.fg)
+	self.target.setCursorPos(self.dynX, self.dynY)
+	self.target.write(self.text)
+	
+	self.target.setCursorPos(cursorX, cursorY)
+end
+Label = setmetatable(Label, {__index=DEFAULTS, __call=Label.new})
 
 Button = {}
-Button.help = "Button{master, target=target, x=x, y=y, width=width, height=height, text=text, func=func, color_bg=color_bg, color_text=color_text, color_used=color_used}"
-function Button:new(kw) -- Button{master, x=x,y=y,...}
-    local widget = NewButton(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y, kw.width or kw.w, kw.height or kw.h,
-        kw.text, kw.func or kw.callback,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg, kw.color_used or kw.cu
-    )
-    local master = kw[1] or kw.master or MainPanel
+function Button.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		width=kw.width or kw.w,
+		height=kw.height or kw.h,
+		text = kw.text,
+		func=parseCallback(kw),
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text,
+		ug = kw.ug or kw.color_used
+	}
+	local master = kw[1] or kw.master or MainPanel
     if master then
         master:addCHILD(widget)
     end
-    return widget
+	return setmetatable(widget, {__index=Button, __name="Button"})
 end
-setmetatable(Button,{__call=Button.new})
-
---Button constructor
-function NewButton(target, x, y, width, height, text, func, color_bg, color_text, color_used)
-	local button = {
-		draw = function(s, color)
-			if not s.visible then return end
-			if not color then color = s.color_bg end
-			local cursorX, cursorY = s.target.getCursorPos()
-			
-			s:_dynRefresh()
-			
-			drawRect(s.target, s.dynX, s.dynY, s.width, s.height, color)
-			
-			local cx, cy = getTextLayoutPos(s.text_pos, s.text, s.dynX, s.dynY, s.width, s.height)
-			s.target.setTextColor(s.color_text)
-			s.target.setCursorPos(cx, cy)
-			s.target.write(s.text)
-				
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-		
-		clickCheck = function(s, t)
-			if not s.enabled then return end
-			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target) --getPeripheralName(s.target) 
-				or s.target ~= term.native() and t[1] == "mouse_click" then
-				return
-			end
-
-			s:_dynRefresh()
-			
-			if inBounds(t[3], t[4], s.dynX, s.dynY, s.width - 1, s.height - 1) then
-				s:used()
-				return true
-			end
-			return false
-		end,
-	}
-	button = setmetatable(button, {__index=defaults, __name="Button"})
-	button.target = target
-	button.x = x
-	button.y = y
-	button.width = width
-	button.height = height
-	button.text = text
-	button.func = func
-	button.color_text = color_text
-	button.color_bg = color_bg
-	button.color_used = color_used
+function Button.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
 	
-	return button
+	self:_dynRefresh()
+	
+	drawRect(self.target, self.dynX, self.dynY, self.width, self.height, self.bg)
+	
+	local cx, cy = getTextLayoutPos(self.text_pos, self.text, self.dynX, self.dynY, self.width, self.height)
+	self.target.setTextColor(self.fg)
+	self.target.setCursorPos(cx, cy)
+	self.target.write(self.text)
+		
+	self.target.setCursorPos(cursorX, cursorY)
 end
+local function clickValid(self, e)
+	if e[1] == 'mouse_click' then
+		return self.target == term.native()
+	elseif e[1] == 'monitor_touch' then
+		return self.target and peripheral.getName(self.target)
+	end
+end
+function Button.clickCheck(self, t)
+	if not self.enabled then return end
+	if not clickValid(self, t) then
+		return
+	end
+
+	self:_dynRefresh()
+	
+	if inBounds(t[3], t[4], self.dynX, self.dynY, self.width - 1, self.height - 1) then
+		self:used()
+		return true
+	end
+	return false
+end
+Button = setmetatable(Button, {__index=DEFAULTS, __call=Button.new})
 
 CheckBox = {}
-CheckBox.help = "CheckBox{master, target=target, x=x, y=y, width=width, height=height, text=text, func=func, color_bg=color_bg, color_text=color_text, color_used=color_used}"
-function CheckBox:new(kw) -- CheckBox{master, x=x,y=y,...}
-    local widget = NewCheckBox(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y, kw.width or kw.w, kw.height or kw.h,
-        kw.text, kw.func or kw.callback or kw.call,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg, kw.color_used or kw.cu
-    )
-    local master = kw[1] or kw.master or MainPanel
+function CheckBox.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		width=kw.width or kw.w,
+		height=kw.height or kw.h,
+		text = kw.text,
+		func=parseCallback(kw),
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text,
+		ug = kw.ug or kw.color_used,
+		
+		check=false
+	}
+	local master = kw[1] or kw.master or MainPanel
     if master then
         master:addCHILD(widget)
     end
-    return widget
+	return setmetatable(widget, {__index=CheckBox, __name="CheckBox"})
 end
-setmetatable(CheckBox,{__call=CheckBox.new})
-
---CheckBox constructor
-function NewCheckBox(target, x, y, width, height, text, func, color_bg, color_text, color_used)
-	local chbox = {
-		check = false,
-		
-		draw = function(s, color)
-			if not s.visible then return end
-			if not color then color = s.color_bg end
-			local cursorX, cursorY = s.target.getCursorPos()
+function CheckBox.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
 			
-			s:_dynRefresh()
-			
-			drawRect(s.target, s.dynX, s.dynY, s.width, s.height, color)
-			
-			local cx, cy = getTextLayoutPos(s.text_pos, "[ ]-" .. s.text, s.dynX, s.dynY, s.width, s.height)
-			s.target.setTextColor(s.color_text)
-			s.target.setCursorPos(cx, cy)
-			s.target.write("["..( (s.check == true) and "X" or " ") .. "]-"..s.text)	
-				
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-		
-		clickCheck = function(s, t)
-			if not s.enabled then return end
-			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target)
-				or s.target ~= term.native() and t[1] == "mouse_click" then
-				return 
-			end
-
-			s:_dynRefresh()
-			
-			if inBounds(t[3], t[4], s.dynX, s.dynY, s.width - 1, s.height - 1) then
-				s:used()
-				return true
-			end
-			return false
-		end,
-		
-		used = function(s)
-			s.check = not s.check
-			if s.func then s:func() end
-			s:draw()
-		end,
-	}
-	--chbox = setmetatable(chbox, getDefaults())
-	chbox = setmetatable(chbox, {__index=defaults, __name="CheckBox"})
+	self:_dynRefresh()
 	
-	chbox.target = target
-	chbox.x = x
-	chbox.y = y
-	chbox.width = width
-	chbox.height = height
-	chbox.text = text
-	chbox.func = func
-	chbox.color_text = color_text
-	chbox.color_bg = color_bg
-	chbox.color_used = color_used
-	
-	return chbox
+	drawRect(self.target, self.dynX, self.dynY, self.width, self.height, self.bg)
+			
+	local cx, cy = getTextLayoutPos(self.text_pos, "[ ]-" .. self.text, self.dynX, self.dynY, self.width, self.height)
+	self.target.setTextColor(s.fg)
+	self.target.setCursorPos(cx, cy)
+	self.target.write("["..( (self.check == true) and "X" or " ") .. "]-"..self.text)	
+		
+	self.target.setCursorPos(cursorX, cursorY)
 end
+function CheckBox.clickCheck(self, t)
+	if not self.enabled then return end
+	if not clickValid(self, t) then
+		return
+	end
+
+	self:_dynRefresh()
+	
+	if inBounds(t[3], t[4], self.dynX, self.dynY, self.width - 1, self.height - 1) then
+		self:used()
+		return true
+	end
+	return false
+end
+function CheckBox.used(self, t)
+	self.check = not self.check
+	if self.func then self:func() end
+	self:draw()
+end
+CheckBox = setmetatable(CheckBox, {__index=DEFAULTS, __call=CheckBox.new})
 
 ProgressBar = {}
-ProgressBar.help = "ProgressBar{master, target=target, x=x, y=y, width=width, height=height, color_bg=color_bg, color_text=color_text, color_used=color_used}"
-function ProgressBar:new(kw) -- ProgressBar{master, x=x,y=y,...}
-    local widget = NewProgressBar(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y, kw.width or kw.w, kw.height or kw.h,
-		kw.func or kw.callback or kw.call,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg, kw.color_used or kw.cu
-    )
-    local master = kw[1] or kw.master or MainPanel
+function ProgressBar.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		width=kw.width or kw.w,
+		height=kw.height or kw.h,
+		text = kw.text,
+		func=parseCallback(kw),
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text,
+		ug = kw.ug or kw.color_used,
+		
+		step=0.01,
+		progress=0.0
+	}
+	local master = kw[1] or kw.master or MainPanel
     if master then
         master:addCHILD(widget)
     end
-    return widget
+	return setmetatable(widget, {__index=ProgressBar, __name="ProgressBar"})
 end
-setmetatable(ProgressBar,{__call=ProgressBar.new})
---[[
-Example for func:
-local function barCallback(s, value)
-    if value then
-        setValue(value)
-        return
-    end
-    -- Return 2 values: 1) Scale filling; 2) Formatted string
-    return getValue()/getMaxValue(), string.format("%i/i%", getValue(), getMaxValue())
+function ProgressBar.setProgress(self, val)
+	self.progress = math.max(0,math.min(1,val))
+	if s.func then s:func(s.progress) end
+	self:draw()
 end
-]]
---Progress Bar constructor
-function NewProgressBar(target, x, y, width, height, func, color_bg, color_text, color_used)
-	local pbar = {
-		step = 0.01,
-		progress = 0.0,
-		
-		setProgress = function(s, np)
-			s.progress = (np > 1) and 1 or np
-			if s.func then s:func(np) end
-			s:draw()
-		end,
-		
-		clear = function(s)
-			s.progress = 0
-			if s.func then s:func(s.progress) end
-			s:draw()
-		end,
-		
-		stepIt = function(s)
-			s.progress = s.progress + s.step
-			if s.progress > 1 then s.progress = 1 end
-			if s.func then s:func(s.progress) end
-			s:draw()
-		end,
-		
-		stepBack = function(s)
-			s.progress = s.progress - s.step
-			if s.progress < 0 then s.progress = 0 end
-			if s.func then s:func(s.progress) end
-			s:draw()
-		end,
-		
-		draw = function(s)
-			if not s.visible then return end
-			local cursorX, cursorY = s.target.getCursorPos()
-			s:_dynRefresh()
-			
-			if s.func then
-				s.progress, s.text = s:func()
-			else
-				s.text = tostring( math.floor(s.progress * 100) ).."%"
-			end
-
-			local pos = math.floor(0.5+ s.width * s.progress)
-			local cx, cy = getTextLayoutPos(s.text_pos, s.text, s.dynX, s.dynY, s.width, s.height)
-			local blit_bg = string.rep(colors.toBlit(s.color_bg),pos)..string.rep(colors.toBlit(s.color_used),s.width-pos)
-			local blit_fg = string.rep(colors.toBlit(s.color_text),s.width)
-			local blit_noText = string.rep(" ", s.width)
-			local dXText = math.floor(0.5+ (s.width - #s.text) / 2)
-			local blit_text = string.sub(string.rep(" ", dXText)..s.text..string.rep(" ", dXText+1), 1, #blit_noText)
-			for i=s.dynY, s.dynY+s.height-1 do
-				s.target.setCursorPos(s.dynX,i)
-				if i ~= cy then
-					s.target.blit(blit_noText, blit_fg, blit_bg)
-				else
-					s.target.blit(blit_text, blit_fg, blit_bg)
-				end
-
-			end
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-	}
-	--pbar = setmetatable(pbar, getDefaults())
-	pbar = setmetatable(pbar, {__index=defaults, __name="ProgressBar"}) -- need test
-	pbar.target = target
-	pbar.x = x
-	pbar.y = y
-	pbar.width = width
-	pbar.height = height
-	pbar.func = func
-	pbar.color_bg = color_bg
-	pbar.color_text = color_text
-	pbar.color_used = color_used
+function ProgressBar.clear(self, val)
+	self.progress = 0
+	if s.func then s:func(s.progress) end
+	self:draw()
+end
+function ProgressBar.stepIt(self)
+	self.progress = math.min(1,self.progress+self.step)
+	if s.func then s:func(s.progress) end
+	self:draw()
+end
+function ProgressBar.stepBack(self)
+	self.progress = math.max(0,self.progress-self.step)
+	if s.func then s:func(s.progress) end
+	self:draw()
+end
+function ProgressBar.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
+	self:_dynRefresh()
 	
-	return pbar
+	if self.func then
+		self.progress, self.text = s:func()
+	else
+		self.text = tostring( math.floor(self.progress * 100) ).."%"
+	end
+	
+	local pos = math.floor(0.5+ self.width * self.progress)
+	local cx, cy = getTextLayoutPos(self.text_pos, self.text, self.dynX, self.dynY, self.width, self.height)
+	local blit_bg = string.rep(colors.toBlit(self.bg), pos)..string.rep(colors.toBlit(self.ug), self.width-pos)
+	local blit_fg = string.rep(colors.toBlit(self.fg), self.width)
+	local blit_noText = string.rep(" ", self.width)
+	local dXText = math.floor(0.5+ (self.width - #self.text) / 2)
+	local blit_text = string.sub(string.rep(" ", dXText)..self.text..string.rep(" ", dXText+1), 1, #blit_noText)
+	for i=self.dynY, self.dynY+self.height-1 do
+		self.target.setCursorPos(self.dynX,i)
+		if i ~= cy then
+			self.target.blit(blit_noText, blit_fg, blit_bg)
+		else
+			self.target.blit(blit_text, blit_fg, blit_bg)
+		end
+
+	end
+	self.target.setCursorPos(cursorX, cursorY)
 end
+ProgressBar = setmetatable(ProgressBar, {__index=DEFAULTS, __call=ProgressBar.new})
 
 TextLine = {}
-TextLine.help = "TextLine{master, target=target, x=x, y=y, width=width, color_bg=color_bg, color_text=color_text}"
-function TextLine:new(kw) -- TextLine{master, x=x,y=y,...}
-    local widget = NewTextLine(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y, kw.width or kw.w,
-        kw.text, kw.func or kw.callback or kw.call,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg
-    )
-    local master = kw[1] or kw.master or MainPanel
-    if master then
-        master:addCHILD(widget)
-    end
-    return widget
-end
-setmetatable(TextLine,{__call=TextLine.new})
-
-function NewTextLine(target, x, y, width, text, func, color_bg, color_text)
-	local textline = {
+function TextLine.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		width=kw.width or kw.w,
+		text = kw.text,
+		func=parseCallback(kw),
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text,
+		
 		secure = false,
 		_textpos = 1,
 		_cursorpos = 1,
-		
-		draw = function(s)
-			if not s.visible then return end
-			local cursorX, cursorY = s.target.getCursorPos()
-			
-			s:_dynRefresh()
-			
-			drawRect(s.target, s.dynX, s.dynY, s.width, 1, s.color_bg)
-
-			s.target.setTextColor(s.color_text)
-			s.target.setCursorPos(s.dynX, s.dynY)
-			local temp = string.sub(s.text, s._textpos, s._textpos + s.width)
-			if s.secure then
-				for i = 1, #temp do
-					s.target.write("*")
-				end
-			else
-				s.target.write(temp)
-			end
-				
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-		
-		clickCheck = function(s, t)
-			if not s.enabled then return end
-			
-			if t[1] == "monitor_touch" and t[2] ~= peripheral.getName(s.target)
-				or s.target ~= term.native() and t[1] == "mouse_click" then
-				return 
-			end
-
-			s:_dynRefresh()
-			
-			if inBounds(t[3], t[4], s.dynX, s.dynY, s.width - 1, s.height - 1) then
-				SELECTED_OBJECT = s
-				return true
-			end
-			return false
-		end,
-		
-		eventReact = function(s, e)
-			if not s.enabled then return end
-			if e[1] == "key" then
-				if e[2] == 28 then
-					SELECTED_OBJECT = nil
-					s:used()
-				elseif e[2] == 14 then
-					s.text = string.sub(s.text, 1, #s.text - 1)
-					s._cursorpos = s._cursorpos - 1
-					
-					if s._cursorpos <= s._textpos then
-						s._textpos = s._textpos - 4
-					end
-					if s._textpos < 1 then
-						s._textpos = 1
-					end
-					if s._cursorpos < 1 then
-						s._cursorpos = 1
-					end
-					
-					s:draw()
-				elseif e[2] == 203 then
-				--left
-				elseif e[2] == 205 then
-				--right
-				end
-			elseif e[1] == "char" then
-				s.text = s.text .. e[2] --testing
-				
-				s._cursorpos = s._cursorpos + 1
-				
-				if s._cursorpos > s._textpos + s.width - 1 then
-					s._textpos = s._textpos + 1
-				end
-				
-				s:draw()
-			end
-		end,
 	}
-	--textline = setmetatable(textline, getDefaults())
-	textline = setmetatable(textline, {__index=defaults, __name="TextLine"}) -- need test
-	textline.target = target
-	textline.x = x
-	textline.y = y
-	textline.width = width
-	textline.text = text
-	textline.func = func
-	textline.color_bg = color_bg
-	textline.color_text = color_text
-	return textline
+	local master = kw[1] or kw.master or MainPanel
+    if master then
+        master:addCHILD(widget)
+    end
+	return setmetatable(widget, {__index=TextLine, __name="TextLine"})
 end
+function TextLine.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
+	
+	self:_dynRefresh()
+	
+	drawRect(self.target, self.dynX, self.dynY, self.width, 1, self.bg)
+
+	self.target.setTextColor(self.color_text)
+	self.target.setCursorPos(self.dynX, self.dynY)
+	local temp = string.sub(self.text, self._textpos, self._textpos + self.width)
+	if self.secure then
+		for i = 1, #temp do
+			self.target.write("*")
+		end
+	else
+		self.target.write(temp)
+	end
+		
+	self.target.setCursorPos(cursorX, cursorY)
+end
+function TextLine.clickCheck(self, t)
+	if not self.enabled then return end
+	if not clickValid(self, t) then
+		return
+	end
+
+	self:_dynRefresh()
+	
+	if inBounds(t[3], t[4], self.dynX, self.dynY, self.width - 1, self.height - 1) then
+		SELECTED_OBJECT = self
+		return true
+	end
+	return false
+end
+function TextLine.eventReact(self, e) -- TODO
+	if not self.enabled then return end
+	if e[1] == "key" then
+		if e[2] == 28 then -- ???
+			SELECTED_OBJECT = nil
+			s:used()
+		elseif e[2] == 14 then -- ???
+			s.text = string.sub(s.text, 1, #s.text - 1)
+			s._cursorpos = s._cursorpos - 1
+			
+			if s._cursorpos <= s._textpos then
+				s._textpos = s._textpos - 4
+			end
+			if s._textpos < 1 then
+				self._textpos = 1
+			end
+			if s._cursorpos < 1 then
+				self._cursorpos = 1
+			end
+			
+			s:draw()
+		elseif e[2] == 203 then --left
+		elseif e[2] == 205 then --right
+		end
+	elseif e[1] == "char" then
+		self.text = self.text .. e[2]
+		
+		self._cursorpos = self._cursorpos + 1
+		
+		if self._cursorpos > self._textpos + self.width - 1 then
+			self._textpos = self._textpos + 1
+		end
+		
+		self:draw()
+	end
+end
+TextLine = setmetatable(TextLine, {__index=DEFAULTS, __call=TextLine.new})
 
 TextArea = {}
-TextArea.help = "TextArea{master, target=target, x=x, y=y, width=width, height=height, text=text, color_bg=color_bg, color_text=color_text}"
-function TextArea:new(kw) -- TextArea{master, x=x,y=y,...}
-    local widget = NewTextArea(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y, kw.width or kw.w, kw.height or kw.h,
-        kw.text,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg
-    )
-    local master = kw[1] or kw.master or MainPanel
-    if master then
-        master:addCHILD(widget)
-    end
-    return widget
-end
-setmetatable(TextArea,{__call=TextArea.new})
-
---TextArea constructor
-function NewTextArea(target, x, y, width, height, text, color_bg, color_text)
-	local textarea = {
-		draw = function(s)
-			if not s.visible then return end
-			local cursorX, cursorY = s.target.t()
-			
-			s:_dynRefresh()
-			
-			drawRect(s.target, s.dynX, s.dynY, s.width, s.height, s.color_bg)
-			
-			local k = 0
-			for i = 1, string.len(s.text), s.width do
-				s.target.setCursorPos(s.dynX, s.dynY + k)
-				k = k + 1
-				s.target.setTextColor(s.color_text)
-				s.target.write(string.sub(s.text, i, i + s.width - 1))
-			end
-				
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-		
-		clickCheck = function(s, t)
-			if not s.enabled then return end
-			
-			if t[1] == "monitor_touch" and t[2] ~= getPeripheralName(s.target) 
-				or s.target ~= term.native() and t[1] == "mouse_click" then
-				return 
-			end
-
-			s:_dynRefresh()
-			
-			if inBounds(t[3], t[4], s.dynX, s.dynY, s.width - 1, s.height - 1) then
-				SELECTED_OBJECT = s
-				return true
-			end
-			return false
-		end,
-		
-		eventReact = function(s, e)
-			if not s.enabled then return end
-			if e[1] == "key" then
-				if e[2] == 28 then
-					--testing
-				elseif e[2] == 14 then
-					s.text = string.sub(s.text, 1, #s.text - 1)
-					s:draw()
-				end
-			elseif e[1] == "char" then
-				s.text = s.text .. e[2] --testing
-				s:draw()
-			end
-		end,
+function TextArea.new(self, kw)
+	local widget = {
+		target = parseTarget(kw),
+		x=kw.x,y=kw.y,
+		width=kw.width or kw.w,
+		height=kw.height or kw.h,
+		text = kw.text,
+		bg = kw.bg or kw.color_bg,
+		fg = kw.fg or kw.color_text,
 	}
-	--textarea = setmetatable(textarea, getDefaults())
-	textarea = setmetatable(textarea, {__index=defaults, __name="TextArea"}) -- need test
-	textarea.target = target
-	textarea.x = x
-	textarea.y = y
-	textarea.width = width
-	textarea.height = height
-	textarea.text = text
-	textarea.color_bg = color_bg
-	textarea.color_text = color_text
-	return textarea
-end
-
-Label = {}
-Label.help = "Label{master, target=target, x=x, y=y, text=text, color_bg=color_bg, color_text=color_text}"
-function Label:new(kw) -- Label{master, x=x,y=y,...}
-    local widget = NewLabel(
-        kw.target or kw.monitor or kw.terminal or kw.term,
-        kw.x, kw.y,
-        kw.text,
-        kw.color_bg or kw.bg, kw.color_text or kw.fg
-    )
-    local master = kw[1] or kw.master or MainPanel
+	local master = kw[1] or kw.master or MainPanel
     if master then
         master:addCHILD(widget)
     end
-    return widget
+	return setmetatable(widget, {__index=TextArea, __name="TextArea"})
 end
-setmetatable(Label,{__call=Label.new})
-
---Label constructor
-function NewLabel(target, x, y, text, color_bg, color_text)
-	local label = {
-		draw = function(s)
-			if not s.visible then return end
-			local cursorX, cursorY = s.target.getCursorPos()
-			
-			s:_dynRefresh()
+function TextArea.draw(self)
+	if not self.visible then return end
+	local cursorX, cursorY = self.target.getCursorPos()
 	
-			drawLine(s.target, s.dynX, s.dynY, s.dynX + string.len(s.text) - 1, s.dynY , s.color_bg)
-			s.target.setTextColor(s.color_text)
-			s.target.setCursorPos(s.dynX, s.dynY)
-			s.target.write(s.text)
-			
-			s.target.setCursorPos(cursorX, cursorY)
-		end,
-	}
-	--label = setmetatable(label, getDefaults())
-	label = setmetatable(label, {__index=defaults, __name="Label"}) -- need test
-	label.target = target
-	label.x = x
-	label.y = y
-	label.text = text
-	label.color_bg = color_bg
-	label.color_text = color_text
-	return label
+	self:_dynRefresh()
+	
+	drawRect(self.target, self.dynX, self.dynY, self.width, self.height, self.bg)
+	
+	local k = 0
+	for i = 1, string.len(self.text), self.width do
+		self.target.setCursorPos(self.dynX, self.dynY + k)
+		k = k + 1
+		self.target.setTextColor(self.color_text)
+		self.target.write(string.sub(self.text, i, i + self.width - 1))
+	end
+		
+	self.target.setCursorPos(cursorX, cursorY)
+end
+function TextLine.clickCheck(self, t)
+	if not self.enabled then return end
+	if not clickValid(self, t) then
+		return
+	end
+
+	self:_dynRefresh()
+	
+	if inBounds(t[3], t[4], self.dynX, self.dynY, self.width - 1, self.height - 1) then
+		SELECTED_OBJECT = self
+		return true
+	end
+	return false
+end
+function TextLine.eventReact(self, e) -- TODO
+	if not self.enabled then return end
+	if e[1] == "key" then
+		if e[2] == 28 then
+			--testing
+		elseif e[2] == 14 then
+			self.text = string.sub(self.text, 1, #self.text - 1)
+			self:draw()
+		end
+	elseif e[1] == "char" then
+		self.text = self.text .. e[2] --testing
+		self:draw()
+	end
 end
 
 --click/touch handler
@@ -863,13 +657,14 @@ local function exec(event, object)
 	if not object.enabled then return end
 	for _, child in pairs(object._CHILDREN) do
 		exec(event, child)
-		if child.clickCheck and child:clickCheck(event) then
+		if child:clickCheck(event) then
 			return true
 		end
 	end
 end
 
 --Event handler. Call this if overwrite os.pullEvent()
+-- TODO: Add fix for multishell duped events
 function eventHandler(e)
 	if e[1] == "mouse_click" or e[1] == "monitor_touch" then
 		--Check if selected object or its children clicked
@@ -903,7 +698,6 @@ end
 
 pullEventRawBackup = os.pullEventRaw
 
-
 local _filter_m = {
 	__len=function(self)
 		local i = 0
@@ -935,7 +729,7 @@ end
 local thread = false
 local function MultiThread( _sFilter )
 	for i=#mainThread, 1, -1 do
-		if coroutine.running()==mainThread[i] then
+		if coroutine.running() == mainThread[i] then
 			thread = true
 			local event,co
 			repeat
@@ -977,11 +771,9 @@ function create(f,...)
 end
 think = create
  
-
-function kill()
+function kill(co)
   filter[co]=nil
 end
- 
 
 function killAll()
   filter=setmetatable({},_filter_m)
@@ -991,6 +783,10 @@ end
 function busy()
 	return #filter > 0
 end
+
+
+
+
 
 
 
